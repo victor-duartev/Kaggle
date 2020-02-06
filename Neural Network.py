@@ -1,71 +1,106 @@
-#Importação de pandas
+#Importações
 import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.base import BaseEstimator, TransformerMixin
+from keras.layers import Dense, Dropout, BatchNormalization
+from keras.models import Sequential
 
 #Leitura dos data bases
-train = pd.read_csv('train.csv')
-previsores = train.iloc[:, 0:8].values
-classe = train.iloc[:, 8].values
-test = pd.read_csv('test.csv')
+df_train = pd.read_csv('train.csv')
+df_test = pd.read_csv('test.csv')
 
-#Importação do SimpleImputer
-from sklearn.impute import SimpleImputer
-#Definição de variável para imputer
-imputer_age = SimpleImputer()
-#Aplicação do imputer na coluna Age do df previsores
-imputer_age = imputer_age.fit(previsores[:, 3:4])
-#Atualização do df previsores com imputer aplicado
-previsores[:, 3:4] = imputer_age.transform(previsores[:, 3:4])
+#Criação de transformador numérico e categórico
+numerical_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='mean')),
+    ('scaler', StandardScaler())
+])
+categorical_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='most_frequent')), 
+    ('onehot', OneHotEncoder(handle_unknown='ignore'))
+])
 
-#Imputer para df test para coluna Age
-imputer_age_test = SimpleImputer()
-imputer_age_test = imputer_age_test.fit(test.iloc[:, 3:4])
-test.iloc[:, 3:4] = imputer_age_test.transform(test.iloc[:, 3:4])
+#Criação de transformador personalizado para coluna "Name" 
+#(substitui o título pelo vetor correspondente)
+class TitleSelector(BaseEstimator, TransformerMixin):
+    def __init__( self):
+        self.dict_title = {
+            "Capt":       0,
+            "Col":        0,
+            "Major":      0,
+            "Jonkheer":   1,
+            "Don":        1,
+            "Sir" :       1,
+            "Dr":         0,
+            "Rev":        0,
+            "the Countess":1,
+            "Dona":       1,
+            "Mme":        2,
+            "Mlle":       3,
+            "Ms":         2,
+            "Mr" :        4,
+            "Mrs" :       2,
+            "Miss" :      3,
+            "Master" :    5,
+            "Lady" :      1
+        }
 
-#Imputer para df previsores para coluna Fare
-imputer_fare = SimpleImputer()
-imputer_fare = imputer_fare.fit(previsores[:, 6:7])
-previsores[:, 6:7] = imputer_fare.transform(previsores[:, 6:7])
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X, y=None):
+        for i, name in enumerate(X["Name"]):
+            for title in self.dict_title.keys():
+                if title in name:
+                    X["Name"][i] = self.dict_title[title]
+                    break
+                
+            assert X["Name"][i] in self.dict_title.values()
+            
+        return X
 
-#Imputer para df test para coluna Fare
-imputer_fare_test = SimpleImputer()
-imputer_fare_test = imputer_fare_test.fit(test.iloc[:, 6:7])
-test.iloc[:, 6:7] = imputer_fare_test.transform(test.iloc[:, 6:7])
+name_transformer = Pipeline(steps=[
+    ('name', TitleSelector()),
+    ('onehot', OneHotEncoder(handle_unknown='ignore'))
+])
 
-#Imputer para df provisores para coluna Embarked
-imputer_embarked = SimpleImputer(strategy="most_frequent")
-imputer_embarked = imputer_embarked.fit(previsores[:, 7:8])
-previsores[:, 7:8] = imputer_embarked.transform(previsores[:, 7:8])
+#Colunas numéricas
+num_cols = ["Age", "Fare", ]
+#Colunas categóricas
+cat_cols = ["Pclass", "Sex", "SibSp", "Parch", "Ticket", "Cabin", "Embarked"]
+#Colunas totais
+cols = num_cols + cat_cols + ["Name"]
 
-#Imputer para df test para coluna Embarked
-imputer_embarked_test = SimpleImputer(strategy="most_frequent")
-imputer_embarked_test = imputer_embarked_test.fit(test.iloc[:, 7:8])
-test.iloc[:, 7:8] = imputer_embarked_test.transform(test.iloc[:, 7:8])
+#Criação de ColumnTransformer e fit e transform
+preprocessor = ColumnTransformer(transformers=[
+    ('num', numerical_transformer, num_cols),
+    ('name', name_transformer, ["Name"]),
+    ('cat', categorical_transformer, cat_cols),
+])
 
-#Importações de OneHotEncoder e ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.compose import ColumnTransformer
-#Definição de variável do ColumnTransformer com parâmetros já setados
-columnTransformer = ColumnTransformer([('encoder', OneHotEncoder(), [2, 7])], remainder='passthrough')
-#Aplicação no df previsores
-previsores = columnTransformer.fit_transform(previsores)
-#Aplicação no df test
-test = columnTransformer.fit_transform(test)
+X_train = preprocessor.fit_transform(df_train[cols])
+y_train = df_train["Survived"].values
 
-#Importação do Neural Network
-from sklearn.neural_network import MLPClassifier
-#Definição de variável para Neural Network
-algoritimo = MLPClassifier(verbose = True,
-                              max_iter=1000,
-                              tol = 0.0000010,
-                              solver = 'adam',
-                              hidden_layer_sizes = (100, 100),
-                              activation = 'relu')
-#Aplicação do Neural Network nos df's previcores e classe)
-algoritimo.fit(previsores, classe)
-#Criação de variável com resultados do Neural Network
-previsoes = algoritimo.predict(test)
+#Criação de rede neural com 2 camadas ocultas 
+model = Sequential()
+model.add(Dense(32, input_dim=858, activation='relu'))
+model.add(Dropout(0.9))
+model.add(Dense(32, activation='relu'))
+model.add(BatchNormalization())
+model.add(Dropout(0.9))
+model.add(Dense(1, activation='sigmoid'))    
 
-#Converte numpy array em pandas df
-resultado = pd.DataFrame(previsoes)
-#Exporta df para csv file
-resultado.to_csv('resultados Neural Network.csv', index=False, header=False)
+#Treinamento da rede neural
+model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.fit(X_train, y_train, epochs=1000, batch_size=8)
+
+X_test = preprocessor.transform(df_test[cols])
+y_pred = model.predict_classes(X_test)
+
+#Criação de arquivo para predições
+df_pred = pd.DataFrame(df_test["PassengerId"])
+df_pred["Survived"] = y_pred
+df_pred.to_csv("submission.csv", index=False)
+    

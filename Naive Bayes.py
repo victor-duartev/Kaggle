@@ -3,9 +3,10 @@ import pandas as pd
 
 #Leitura dos data bases
 train = pd.read_csv('train.csv')
+test = pd.read_csv('test.csv')
+#Divisão em data frames previsores e classe
 previsores = train.iloc[:, 0:8].values
 classe = train.iloc[:, 8].values
-test = pd.read_csv('test.csv')
 
 #Importação do SimpleImputer
 from sklearn.impute import SimpleImputer
@@ -55,10 +56,12 @@ test = columnTransformer.fit_transform(test)
 from sklearn.naive_bayes import GaussianNB
 #Definição de variável para NB
 algoritimo = GaussianNB()
-#Aplicação do NB nos df's previcores e classe)
+#Aplicação do NB nos df's previsores e classe
 algoritimo.fit(previsores, classe)
 #Criação de variável com resultados do NB
 previsoes = algoritimo.predict(test)
 
+#Conversão de np.array em pandas dataframe
 resultado = pd.DataFrame(previsoes)
+#Exportação para CSV file
 resultado.to_csv('resultados naive bayes 2.csv', index=False, header=False)
